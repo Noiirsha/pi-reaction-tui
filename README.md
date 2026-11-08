@@ -1,6 +1,6 @@
 # pi-reaction-tui
 
-A local Pi extension that puts a monochrome DOS-style workbench around Pi's native conversation renderer and editor. English labels, thin closed frames, menu first, and a centered one-row **white** application title. It does not replace Markdown rendering, change your terminal font, or run a separate agent client.
+A local Pi extension that puts a monochrome DOS-style workbench around Pi's native conversation renderer and editor. English labels, thin closed frames, a dark menu row, a centered one-row **white** application title and an independent white status strip at the very bottom. Model and thinking level sit on the Input frame's top edge. It does not replace Markdown rendering, change your terminal font, or run a separate agent client.
 
 ## Run
 
@@ -40,7 +40,21 @@ Type `/` to open Pi's native completion list **inside** the expanding Input fram
 
 The resume overlay lists workspaces on the left and sessions on the right. Tab switches panes, arrows select, Enter opens a workspace or resumes a session, and Esc cancels. Typing in the sessions pane searches names and first messages. Below 54 columns the same panes appear one at a time. The workspace list groups **saved sessions**, not source files. Resuming delegates to Pi's `switchSession`; it does not change the process working directory. New/resume actions require an idle agent.
 
-Dialogs own keyboard focus and replace the footer hints. Canceling preserves the editor draft and native conversation ScrollView. Native history, multiline editing, external editing (Ctrl+G by default), image paste and transcript rendering remain Pi's responsibilities. The footer reads actual keybindings rather than inventing F-key actions. `/settings` opens the workbench's limited settings; use `/workbench off` for Pi's complete native settings dialog.
+Dialogs own keyboard focus and replace the help row above the status strip. Canceling preserves the editor draft and native conversation ScrollView. Native history, multiline editing, external editing (Ctrl+G by default), image paste and transcript rendering remain Pi's responsibilities. The help row reads actual keybindings, displays each action's first configured binding and uses macOS notation (`⌃L`, `⇧↵`, `⌥…`) on macOS, or `Ctrl+L` / `Shift+Enter` notation on other platforms. Control is never replaced with Command. The row omits whole actions as space becomes tight, retaining the final Menu/Cancel action; Help lists all configured editor bindings. `/settings` opens the workbench's limited settings; use `/workbench off` for Pi's complete native settings dialog.
+
+## Status strip
+
+The screen's final row is always a full-width, one-row white strip with black text, without a border. It stays visible while a dialog owns focus. Run state appears on the left; RO/RW stays at the right when the optional mode plugin is loaded.
+
+| Field | Meaning |
+| --- | --- |
+| UP / DN | Session totals for recorded input / output tokens. UP is the SDK's input counter; cache tokens are reported separately. These are not network byte counts. |
+| CR / CW | Session totals for cache-read / cache-write tokens. |
+| HIT | Latest assistant request's cache-read tokens divided by input + cache read + cache write. |
+| COST | Sum of recorded session usage costs in USD; rounded to three decimals in the strip. |
+| CTX | Current context percentage / context-window capacity. |
+
+Session totals include recorded auxiliary usage, such as compaction, across saved session entries. Unknown values display `-`; a new session does not claim a zero-percent cache hit. Numbers use compact k/M/B units. Narrow terminals first shorten CTX capacity, then omit COST, CW and CR before the primary token counts and current context. Fields are omitted whole and never wrap; `/workbench details` retains exact counts and cost. Totals are cached between completed message/turn, session and compaction events so resizing and ordinary keypresses do not rescan history.
 
 ## Scope and compatibility
 
@@ -58,7 +72,7 @@ npm test
 PI_NODE_MODULES=/path/to/pi/node_modules npm test
 ```
 
-Tests use the actual Pi 1.5.0 loader, Markdown renderer, native editor, keybindings and fullscreen layout. They cover frame widths, restoring the original layout, completion acceptance, command dispatch, external editor/paste callbacks, model-dialog search/cancel, draft retention, regular-screen fallback and resume workspace/search/selection at different widths. Missing Pi runtime dependencies cause tests to skip, not install packages.
+Integration tests use the actual Pi 1.5.0 loader, Markdown renderer, native editor, keybindings and fullscreen layout. They cover frame widths, restoring the original layout, completion acceptance, command dispatch, external editor/paste callbacks, model-dialog search/cancel, draft retention, regular-screen fallback, resume workspace/search/selection, the independent status strip, usage refresh and right-aligned mode at different widths. Pure tests cover usage/cache arithmetic and platform key notation. A missing Pi runtime causes integration tests to skip; pure tests still run.
 
 An isolated offline 80×24 Pi process was also used to verify startup, framing, a real model dialog opened by Ctrl+L, dialog dismissal and clean exit. No model requests were sent. OS clipboard image data, launching a real external editor, authenticated model execution and switching a personal saved session have not been exercised end to end; automated tests verify the native callbacks and selected session path.
 

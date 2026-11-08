@@ -1,16 +1,9 @@
 import { Input, matchesKey, type Component, type TUI } from "@earendil-works/pi-tui";
-import type { KeybindingsManager, SessionInfo } from "@earendil-works/pi-coding-agent";
+import type { SessionInfo } from "@earendil-works/pi-coding-agent";
 import { clean, center, edge, fit, inverse, muted, row, shell } from "./style.ts";
+import { keyText, navigation, type DialogKeys } from "./keys.ts";
 
 export interface Item { value: string; label: string; description?: string }
-export type DialogKeys = Pick<KeybindingsManager, "matches" | "getKeys">;
-export function keyText(keys: DialogKeys, action: string): string {
-  return keys.getKeys(action).join("/").replaceAll("escape", "Esc").replaceAll("enter", "Enter").replaceAll("tab", "Tab");
-}
-export function navigation(keys: DialogKeys) {
-  return `${keyText(keys, "tui.select.up")}/${keyText(keys, "tui.select.down")} Select  ` +
-    `${keyText(keys, "tui.select.confirm")} Confirm  ${keyText(keys, "tui.select.cancel")} Cancel`;
-}
 
 export class ListDialog implements Component {
   readonly capturesViewportInput = true;

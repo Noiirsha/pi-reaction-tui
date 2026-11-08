@@ -4,7 +4,7 @@ import { edge, fit, monochromeEditorTheme, shell } from "./style.ts";
 
 export class WorkbenchEditor extends CustomEditor {
   constructor(tui: TUI, private bindings: KeybindingsManager, private changed: () => void,
-    private open: (page: string) => void) {
+    private open: (page: string) => void, private modelLabel: () => string = () => "") {
     super(tui, monochromeEditorTheme, bindings, { paddingX: 1, autocompleteMaxVisible: 5 });
     let submit: ((text: string) => void) | undefined;
     // Pi supplies onSubmit after construction. Route only UI commands through a
@@ -20,7 +20,7 @@ export class WorkbenchEditor extends CustomEditor {
   }
 
   // Pi assigns its themed border after construction. Draw using shell colors instead.
-  protected renderTopBorder(width: number): string { return edge(width, "Input"); }
+  protected renderTopBorder(width: number): string { return edge(width, "Input", false, this.modelLabel()); }
   protected renderBottomBorder(width: number): string { return edge(width, "", true); }
 
   render(width: number): string[] {
@@ -32,7 +32,7 @@ export class WorkbenchEditor extends CustomEditor {
     const bottomIndex = native.renderedVisibleLineCount + 1;
     const result = lines.filter((_, index) => index !== 0 && index !== bottomIndex)
       .map(line => shell("│") + shell(fit(line, width - 2)) + shell("│"));
-    return [edge(width, "Input"), ...result, edge(width, "", true)];
+    return [edge(width, "Input", false, this.modelLabel()), ...result, edge(width, "", true)];
   }
 
   handleInput(data: string): void {

@@ -94,7 +94,7 @@ export async function host(t, { regular = false } = {}) {
   return { ctx, tui, terminal, bindings, originalRoot, header, document, transcript, messages, notices, opened, submitted,
     editor: () => editor, footer: () => footer, dialog: () => dialog, dialogOptions: () => dialogOptions,
     command: args => extension.commands.get('workbench').handler(args, ctx),
-    lines: () => tui.render(terminal.columns), lib, sdk, emit,
+    lines: () => tui.render(terminal.columns), lib, sdk, bus, emit,
   };
 }
 
@@ -104,11 +104,15 @@ test('native transcript stays mounted; menu and one-row white title live outside
   assert.equal(h.document.children[0], h.messages);
   const lines = h.lines(), text = lines.map(h.lib.stripTerminalSequences);
   assert.match(text[0], /Session.*Model.*Tools.*View.*Help/);
+  assert.ok(!lines[0].includes('\x1b[107m'), 'inactive menu has no white background');
   assert.match(text[1], /Pi \| pi-reaction-tui \| UI Test/);
   assert.ok(lines[1].includes('\x1b[107m'));
   assert.ok(text.some(line => line.includes('Native transcript')));
   assert.ok(text.some(line => line.includes('Conversation')));
   assert.ok(text.some(line => line.includes('Input')));
+  const inputBorder = h.editor().render(110)[0];
+  assert.match(h.lib.stripTerminalSequences(inputBorder), /Input.*test-model \/ high.*┐$/);
+  assert.ok(!inputBorder.includes('\x1b[107m'));
   for (const width of [40, 60, 110, 160]) {
     h.terminal.columns = width;
     assert.ok(h.lines().every(line => h.lib.visibleWidth(line) <= width), `overflow at ${width}`);
@@ -189,4 +193,37 @@ test('resume switches workspace, filters sessions, resizes and passes the select
   h.dialog().handleInput('\x1b'); await cancel;
   assert.equal(h.tui.layoutRoot, originalRoot); assert.equal(h.document.children[0], h.messages);
   assert.equal(switched.length, 1); assert.equal(h.editor().getText(), 'unfinished draft');
+});
+
+test('independent white status strip stays last, preserves mode and refreshes completed usage', { skip: !available }, async t => {
+  const h = await host(t);
+  let mode = 'ro', reads = 0;
+  const off = h.bus.on('ro-rw-mode:get', query => { query.mode = mode; }); t.after(off);
+  const usage = { input: 1000, output: 500, cacheRead: 8000, cacheWrite: 1000, cost: { total: 0.01 } };
+  h.ctx.sessionManager.getEntries = () => { reads++; return [{ type: 'message', message: { role: 'assistant', usage } }]; };
+  await h.emit('message_end');
+  const lines = h.footer().render(160), status = h.lib.stripTerminalSequences(lines.at(-1));
+  assert.equal(lines.length, 2, 'one help row and one status row, without a shared frame');
+  assert.ok(lines.at(-1).startsWith('\x1b[30m\x1b[107m'));
+  assert.equal(h.lib.visibleWidth(lines.at(-1)), 160);
+  assert.match(status, /IDLE.*UP 1k.*DN 500.*CR 8k.*CW 1k.*HIT 80\.0%.*COST \$0\.010.*CTX 4\.9%\/128k/);
+  assert.ok(status.endsWith(' RO ')); assert.ok(!status.includes('test-model'));
+  assert.ok(!/[┌┐└┘│]/.test(status));
+  for (const width of [1, 2, 3, 10, 40, 60, 80, 110, 160]) {
+    const rendered = h.footer().render(width);
+    assert.ok(rendered.every(line => h.lib.visibleWidth(line) <= width), `footer overflow at ${width}`);
+    assert.equal(h.lib.visibleWidth(rendered.at(-1)), width);
+    if (width >= 4) assert.ok(h.lib.stripTerminalSequences(rendered.at(-1)).endsWith(' RO '));
+  }
+  assert.equal(reads, 1, 'resizing does not rescan session history');
+  usage.output = 750; mode = 'rw';
+  await h.emit('agent_settled');
+  const updated = h.lib.stripTerminalSequences(h.footer().render(160).at(-1));
+  assert.match(updated, /DN 750/); assert.ok(updated.endsWith(' RW ')); assert.equal(reads, 2);
+  const command = h.command('model'); await settle();
+  assert.ok(h.lines()[0].includes('\x1b[107m'), 'only the active menu item is inverted');
+  const modalFooter = h.footer().render(160);
+  assert.match(h.lib.stripTerminalSequences(modalFooter[0]), /Confirm.*Cancel/);
+  assert.ok(modalFooter.at(-1).includes('DN 750'), 'opening a modal leaves the status strip visible');
+  h.dialog().handleInput('\x1b'); await command;
 });

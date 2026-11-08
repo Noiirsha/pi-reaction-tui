@@ -19,9 +19,14 @@ export const center = (text: string, width: number) => {
   const clipped = truncateToWidth(clean(text), Math.max(0, width), "");
   return fit(" ".repeat(Math.max(0, Math.floor((width - visibleWidth(clipped)) / 2))) + clipped, width);
 };
-export const edge = (width: number, label = "", bottom = false) => {
+export const edge = (width: number, label = "", bottom = false, detail = "") => {
   if (width < 2) return shell("─".repeat(Math.max(0, width)));
   const caption = label ? truncateToWidth(` ${label} `, Math.max(0, width - 4), "") : "";
+  const available = width - visibleWidth(caption) - 7;
+  if (!bottom && detail && available >= 8) {
+    const suffix = ` ${truncateToWidth(clean(detail), available, "…")} ─┐`;
+    return shell("┌─" + caption + "─".repeat(Math.max(1, width - 2 - visibleWidth(caption) - visibleWidth(suffix))) + suffix);
+  }
   return shell((bottom ? "└" : "┌") + "─".repeat(Math.min(1, width - 2)) + caption +
     "─".repeat(Math.max(0, width - 3 - visibleWidth(caption))) + (bottom ? "┘" : "┐"));
 };

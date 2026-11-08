@@ -4,12 +4,19 @@ import { SessionManager, VERSION, type ExtensionAPI, type ExtensionContext, type
   type KeybindingsManager } from "@earendil-works/pi-coding-agent";
 import { type Component, type TUI, visibleWidth } from "@earendil-works/pi-tui";
 import { WorkbenchEditor } from "./src/editor.ts";
-import { ListDialog, ResumeDialog, keyText, navigation, type Item } from "./src/dialogs.ts";
+import { ListDialog, ResumeDialog, type Item } from "./src/dialogs.ts";
+import { formatKey, keyText, navigation } from "./src/keys.ts";
+import { statistics, statusText } from "./src/status.ts";
 import { installLayout } from "./src/host-layout.ts";
-import { center, clean, edge, fit, hint, inverse, muted, row } from "./src/style.ts";
+import { center, clean, edge, fit, hint, inverse, muted, row, shell } from "./src/style.ts";
 
 const TABS = ["Session", "Model", "Tools", "View", "Help"];
 const PAGES = ["menu", "session", "resume", "new", "rename", "model", "thinking", "tools", "view", "settings", "help", "details", "off", "on"];
+const EDITOR_ACTIONS = [
+  ["tui.input.submit", "Send"], ["tui.input.newLine", "Newline"],
+  ["app.model.select", "Model"], ["app.editor.external", "Editor"],
+  ["app.clipboard.pasteImage", "Paste"], ["app.thinking.cycle", "Thinking"],
+];
 
 export default function reactionTui(pi: ExtensionAPI) {
   let context: ExtensionContext;
@@ -24,7 +31,9 @@ export default function reactionTui(pi: ExtensionAPI) {
   let working = "IDLE";
   let dialogHints: string | undefined;
   let activeTab = "";
-  let footerHeight = 5;
+  let footerHeight = 2;
+  let stats = statistics([]);
+  let statsDirty = true;
   const modalHeight = () => Math.max(8, (tui?.terminal.rows ?? 24) -
     (editor?.render(tui?.terminal.columns ?? 80).length ?? 3) - footerHeight - 4);
   const modalOptions = () => ({ width: "90%" as const, row: 3, maxHeight: modalHeight() });
@@ -36,17 +45,17 @@ export default function reactionTui(pi: ExtensionAPI) {
   const header: Component = {
     invalidate() {},
     render(width) {
-      const menu = TABS.map(tab => tab === activeTab ? `[${tab}]` : ` ${tab} `).join(" ");
+      const menu = TABS.map(tab => tab === activeTab ? inverse(` ${tab} `) : ` ${tab} `).join(" ");
       const cwd = context?.cwd ?? "";
       const session = context?.sessionManager.getSessionName() || "New Session";
       // A terminal row is the unit of height: no vertical padding on either bar.
-      return [inverse(fit(menu, width)), inverse(center(`Pi | ${basename(cwd) || cwd} | ${session}`, width))];
+      return [shell(fit(menu, width)), inverse(center(`Pi | ${basename(cwd) || cwd} | ${session}`, width))];
     },
     handleMouse(event) {
       if (event.type !== "click" || event.y !== 0) return;
       let x = 0;
       for (const tab of TABS) {
-        const size = visibleWidth(tab === activeTab ? `[${tab}]` : ` ${tab} `);
+        const size = visibleWidth(` ${tab} `);
         if (event.x >= x && event.x < x + size) { open(tab.toLowerCase()); return { handled: true }; }
         x += size + 1;
       }
@@ -61,11 +70,7 @@ export default function reactionTui(pi: ExtensionAPI) {
       hint(keyText(keys, "tui.input.tab"), "Complete"), hint(keyText(keys, "tui.select.confirm"), "Accept"),
       hint(keyText(keys, "tui.select.cancel"), "Dismiss"),
     ].join("  ");
-    const entries = [
-      ["tui.input.submit", "Send"], ["tui.input.newLine", "Newline"],
-      ["app.model.select", "Model"], ["app.editor.external", "Editor"],
-      ["app.clipboard.pasteImage", "Paste"], ["app.thinking.cycle", "Thinking"],
-    ];
+    const entries = [...EDITOR_ACTIONS];
     if (!context.isIdle()) entries.unshift(["app.interrupt", "Abort"]);
     return entries.filter(([action]) => keys!.getKeys(action).length > 0)
       .map(([action, label]) => hint(keyText(keys!, action), label)).concat(hint("/workbench", "Menu")).join("  ");
@@ -91,12 +96,14 @@ export default function reactionTui(pi: ExtensionAPI) {
     }
     if (enabled) disable(ctx);
     context = ctx;
+    statsDirty = true;
     enabled = true;
     previousEditor = ctx.ui.getEditorComponent();
     ctx.ui.setEditorComponent((hostTui, _theme, bindings) => {
       tui = hostTui;
       keys = bindings;
-      editor = new WorkbenchEditor(hostTui, bindings, redraw, open);
+      editor = new WorkbenchEditor(hostTui, bindings, redraw, open,
+        () => `${clean(context.model?.id ?? "No model")} / ${pi.getThinkingLevel()}`);
       return editor;
     });
     ctx.ui.setHeader(() => header);
@@ -110,26 +117,26 @@ export default function reactionTui(pi: ExtensionAPI) {
           const usage = context.getContextUsage();
           const query: { mode?: "ro" | "rw" } = {};
           pi.events.emit("ro-rw-mode:get", query);
-          const badge = query.mode ? inverse(` ${query.mode.toUpperCase()} `) : "";
-          const status = `${context.isIdle() ? "IDLE" : working === "IDLE" ? "RUNNING" : working}   ` +
-            `${clean(context.model?.id ?? "No model")} / ${pi.getThinkingLevel()}   ` +
-            `CTX ${usage?.percent == null ? "?" : usage.percent.toFixed(1) + "%"}`;
-          const inner = Math.max(0, width - 2);
-          const statusLine = fit(status, Math.max(0, inner - visibleWidth(badge))) + badge;
-          const lines = [edge(width), row(statusLine, width)];
+          if (statsDirty) { stats = statistics(context.sessionManager.getEntries()); statsDirty = false; }
+          const run = context.isIdle() ? "IDLE" : working === "IDLE" ? "RUNNING" : working;
+          const lines: string[] = [];
           const statuses = [...data.getExtensionStatuses()].filter(([key]) => key !== "ro-rw-mode")
             .map(([, value]) => clean(value));
-          if (statuses.length) lines.push(row(muted(statuses.join("  ")), width));
+          if (statuses.length) lines.push(shell(fit(muted(statuses.join("  ")), width)));
           const hintText = hints();
-          // Wrap at hint boundaries. Never slice a shortcut away from its action.
+          // Keep one help row. Reserve its final action (Menu or Cancel) when space is tight.
           const parts = hintText.split("  ");
+          const last = parts.pop() ?? "";
           let line = "";
           for (const part of parts) {
-            if (line && visibleWidth(line + "  " + part) > inner) { lines.push(row(line, width)); line = ""; }
-            line += (line ? "  " : "") + part;
+            const next = line + (line ? "  " : "") + part;
+            if (visibleWidth(next + "  " + last) <= width) line = next;
           }
-          if (line) lines.push(row(line, width));
-          lines.push(edge(width, "", true));
+          line += (line ? "  " : "") + last;
+          lines.push(shell(fit(line, width)));
+          // The EDIT-style status strip is always the last, full-width, unframed row.
+          lines.push(inverse(statusText(width, run, stats,
+            usage ? { ...usage, contextWindow: usage.contextWindow ?? context.model?.contextWindow } : undefined, query.mode)));
           footerHeight = lines.length;
           return lines;
         },
@@ -247,15 +254,7 @@ export default function reactionTui(pi: ExtensionAPI) {
     } else if (page === "details") {
       const usage = ctx.getContextUsage();
       const entries = ctx.sessionManager.getEntries();
-      const totals = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 };
-      for (const entry of entries) {
-        const used = entry.type === "message" && entry.message.role === "assistant" ? entry.message.usage :
-          "usage" in entry ? entry.usage : undefined;
-        if (!used) continue;
-        totals.input += used.input; totals.output += used.output;
-        totals.cacheRead += used.cacheRead; totals.cacheWrite += used.cacheWrite;
-        totals.cost += used.cost.total;
-      }
+      const totals = statistics(entries);
       await choose(ctx, "Session Details", [
         { value: "cwd", label: "Workspace", description: ctx.cwd },
         { value: "session", label: "Session", description: ctx.sessionManager.getSessionName() || "Untitled" },
@@ -263,6 +262,7 @@ export default function reactionTui(pi: ExtensionAPI) {
         { value: "context", label: "Context", description: `${usage?.percent?.toFixed(1) ?? "?"}% / ${usage?.contextWindow ?? ctx.model?.contextWindow ?? "?"} tokens` },
         { value: "tokens", label: "Input / Output Tokens", description: `${totals.input} / ${totals.output}` },
         { value: "cache", label: "Cache Read / Write", description: `${totals.cacheRead} / ${totals.cacheWrite}` },
+        { value: "hit", label: "Latest Prompt Cache Hit", description: totals.hit == null ? "Unavailable" : `${totals.hit.toFixed(1)}%` },
         { value: "cost", label: "Recorded Cost", description: `$${totals.cost.toFixed(4)}` },
         { value: "entries", label: "Session Entries", description: String(entries.length) },
         { value: "host", label: "Pi Version", description: VERSION },
@@ -275,6 +275,9 @@ export default function reactionTui(pi: ExtensionAPI) {
         { value: "resume", label: "Resume", description: "/resume; Tab switches workspace and session panes" },
         { value: "native", label: "Native Features", description: "History, image paste, external editor and Markdown stay native" },
         { value: "settings", label: "Settings", description: "/settings opens Workbench settings; /workbench off restores Pi UI" },
+        ...EDITOR_ACTIONS.filter(([action]) => keys?.getKeys(action).length).map(([action, label]) => ({
+          value: action, label, description: keys!.getKeys(action).map(binding => formatKey(binding)).join(" / "),
+        })),
       ]);
     }
   }
@@ -298,7 +301,11 @@ export default function reactionTui(pi: ExtensionAPI) {
   pi.on("agent_start", (_event, ctx) => { context = ctx; working = "RUNNING"; redraw(); });
   pi.on("tool_execution_start", (_event, ctx) => { context = ctx; working = "TOOL"; redraw(); });
   pi.on("tool_execution_end", () => { working = "RUNNING"; redraw(); });
-  pi.on("agent_settled", (_event, ctx) => { context = ctx; working = "IDLE"; redraw(); });
+  pi.on("agent_settled", (_event, ctx) => { context = ctx; statsDirty = true; working = "IDLE"; redraw(); });
+  pi.on("message_end", (_event, ctx) => { context = ctx; statsDirty = true; redraw(); });
+  pi.on("turn_end", (_event, ctx) => { context = ctx; statsDirty = true; redraw(); });
+  pi.on("session_compact", (_event, ctx) => { context = ctx; statsDirty = true; redraw(); });
+  pi.on("session_tree", (_event, ctx) => { context = ctx; statsDirty = true; redraw(); });
   pi.on("message_update", (_event, ctx) => { context = ctx; redraw(); });
   pi.on("model_select", (_event, ctx) => { context = ctx; redraw(); });
   pi.on("thinking_level_select", (_event, ctx) => { context = ctx; redraw(); });

@@ -2,9 +2,9 @@
 
 ## Final design contract
 
-The top row is always the compact Session / Model / Tools / View / Help menu. The second row is a centered Pi / workspace / session title on a solid white background with black text. Both are exactly one terminal row high, with no vertical padding. Conversation and Input use thin, square, closed rectangles with plain captions embedded in their top edges, without underlines or caption tabs.
+The top row is always the compact Session / Model / Tools / View / Help menu on charcoal, with only the active item inverted. The second row is a centered Pi / workspace / session title on a solid white background with black text. Both are exactly one terminal row high, with no vertical padding. Conversation and Input use thin, square, closed rectangles with plain captions embedded in their top edges, without underlines or caption tabs. The Input top edge places the current model / thinking level on the right.
 
-Normal conversation uses one full-width reading area. Only the temporary Resume Session overlay has a workspace sidebar. Dialogs are opaque grayscale, with centered white title bars and inverse selected rows. Input keeps the native cursor and completion behavior. Footer status concentrates on run state, model, thinking level, context percentage and optional mode; usage/cost details live in a separate dialog. Help reflects editor, completion or modal focus.
+Normal conversation uses one full-width reading area. Only the temporary Resume Session overlay has a workspace sidebar. Dialogs are opaque grayscale, with centered white title bars and inverse selected rows. Input keeps the native cursor and completion behavior. A single charcoal help row reflects editor, completion or modal focus, using platform-specific notation for actual configured keys. The final screen row is an independent, unframed, full-width white status strip: run state, UP/DN, CR/CW, latest HIT, COST, CTX and optional RO/RW fixed to the right. It stays one row tall; width adaptation compacts numbers and omits whole secondary fields. Exact usage/cost remain available in Details.
 
 ## Native components retained
 
@@ -15,6 +15,8 @@ Normal conversation uses one full-width reading area. Only the temporary Resume 
 `src/editor.ts` extends `CustomEditor`. It delegates text editing, completion generation, cursor markers, history, paste and external-editor actions to Pi. It reserves two columns for the outer sides and moves the native bottom border below completion rows. Mouse coordinates are translated accordingly. Completion confirmation invokes Pi 1.5.0's own selected-item callback. No global keybindings are changed.
 
 `src/dialogs.ts` provides searchable selection and resume overlays using native Input fields. At small widths, resume displays one pane at a time. Modal height is bounded against the current editor and footer so ordinary 80×24 dialogs leave input visible. Very small terminal heights and very long multiline drafts can still leave insufficient space; enlarging the terminal restores usable space. Menus are compact overlays; selection dialogs use up to 90% width.
+
+`src/status.ts` aggregates recorded session usage separately from its one-row width adaptation. The latest assistant prompt determines HIT; cumulative session usage determines token totals and cost. `src/keys.ts` formats real bindings for macOS or other systems without changing their modifiers. The footer caches statistics until completion/session events; rendering and resizing do not repeatedly copy the session's entire history.
 
 ## Boundaries
 
@@ -31,3 +33,5 @@ Resume groups SessionManager results by their recorded cwd and passes the chosen
 - [Resume workspace/session direction](previews/resume-session.png). Earlier title arrangement and metadata are illustrative; the final implementation follows the contract above.
 
 These are AI-generated design concepts. The test suite and terminal smoke check validate implementation separately.
+
+The 0.2 layout follows the later EDIT-style reference: the menu is charcoal, only the application title and independent bottom status strip are solid white, and model/thinking moved beside Input. Earlier generated images show the superseded framed footer.
