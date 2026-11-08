@@ -20,11 +20,11 @@ test('session totals include recorded auxiliary usage; hit rate uses the latest 
 });
 
 test('platform-specific notation retains actual modifiers and the primary custom binding', () => {
-  assert.equal(formatKey('ctrl+l', 'darwin'), '⌃L');
-  assert.equal(formatKey('shift+enter', 'darwin'), '⇧↵');
-  assert.equal(formatKey('alt+left', 'darwin'), '⌥←');
-  assert.equal(formatKey('ctrl+g', 'linux'), 'Ctrl+G');
-  assert.equal(formatKey('shift+enter', 'win32'), 'Shift+Enter');
+  assert.equal(formatKey('ctrl+l', 'darwin'), '⌃ L');
+  assert.equal(formatKey('shift+enter', 'darwin'), '⇧ ↵');
+  assert.equal(formatKey('alt+left', 'darwin'), '⌥ ←');
+  assert.equal(formatKey('ctrl+g', 'linux'), 'Ctrl + G');
+  assert.equal(formatKey('shift+enter', 'win32'), 'Shift + Enter');
   assert.equal(keyText({ getKeys: () => ['alt+k', 'ctrl+l'] }, 'app.model.select'),
     formatKey('alt+k'));
   assert.equal(keyText({ getKeys: () => [] }, 'unbound'), '');

@@ -18,6 +18,8 @@ Normal conversation uses one full-width reading area. Only the temporary Resume 
 
 `src/status.ts` aggregates recorded session usage separately from its one-row width adaptation. The latest assistant prompt determines HIT; cumulative session usage determines token totals and cost. `src/keys.ts` formats real bindings for macOS or other systems without changing their modifiers. The footer caches statistics until completion/session events; rendering and resizing do not repeatedly copy the session's entire history.
 
+Shortcut hints are plain text on the shell background, without inverse key blocks. Spaces separate modifier symbols and the following key (`⌃ L`, `⇧ ↵`), including in dialog and completion hints, to avoid glyphs touching.
+
 ## Boundaries
 
 The version gate runs before any customization. The host adapter validates expected structures before mutation and falls back to public header/editor/footer hooks when fullscreen framing is unavailable. Structural changes in Pi require retesting this adapter, even if public SDK signatures stay stable.

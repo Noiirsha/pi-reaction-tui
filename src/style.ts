@@ -34,7 +34,7 @@ export const row = (text: string, width: number) => width < 2 ? shell(fit(text, 
   shell("│") + shell(fit(text, width - 2)) + shell("│");
 export const framed = (lines: string[], width: number, title = "") =>
   [edge(width, title), ...lines.map(line => row(line, width)), edge(width, "", true)];
-export const hint = (key: string, label: string) => `${inverse(` ${clean(key)} `)} ${clean(label)}`;
+export const hint = (key: string, label: string) => `${clean(key)} ${clean(label)}`;
 export const monochromeEditorTheme = {
   borderColor: shell,
   selectList: {

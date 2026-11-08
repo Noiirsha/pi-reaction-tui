@@ -66,7 +66,7 @@ export default function reactionTui(pi: ExtensionAPI) {
     if (dialogHints) return dialogHints;
     if (!keys) return "/workbench Menu";
     if (editor?.isShowingAutocomplete()) return [
-      hint(keyText(keys, "tui.select.up") + "/" + keyText(keys, "tui.select.down"), "Select"),
+      hint(keyText(keys, "tui.select.up") + " / " + keyText(keys, "tui.select.down"), "Select"),
       hint(keyText(keys, "tui.input.tab"), "Complete"), hint(keyText(keys, "tui.select.confirm"), "Accept"),
       hint(keyText(keys, "tui.select.cancel"), "Dismiss"),
     ].join("  ");

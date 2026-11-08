@@ -19,6 +19,14 @@ pi install /Users/noiirsha/workspace/pi_agent_plugins/pi-reaction-tui
 pi --tui-mode fullscreen
 ```
 
+After installing, an optional zsh alias starts the same workbench without specifying the extension again:
+
+```sh
+alias pirt='pi --tui-mode fullscreen'
+```
+
+Put it in `~/.zshrc`, then open a new terminal or run `source ~/.zshrc` in an existing one.
+
 For another machine, replace the absolute path. Installation is optional; creating this repository does not change your Pi settings. Other Pi versions retain the native interface. On Pi 1.5.0's regular screen, only the header, editor and footer are customized; the fixed conversation frame needs fullscreen mode.
 
 ## Controls
@@ -40,7 +48,7 @@ Type `/` to open Pi's native completion list **inside** the expanding Input fram
 
 The resume overlay lists workspaces on the left and sessions on the right. Tab switches panes, arrows select, Enter opens a workspace or resumes a session, and Esc cancels. Typing in the sessions pane searches names and first messages. Below 54 columns the same panes appear one at a time. The workspace list groups **saved sessions**, not source files. Resuming delegates to Pi's `switchSession`; it does not change the process working directory. New/resume actions require an idle agent.
 
-Dialogs own keyboard focus and replace the help row above the status strip. Canceling preserves the editor draft and native conversation ScrollView. Native history, multiline editing, external editing (Ctrl+G by default), image paste and transcript rendering remain Pi's responsibilities. The help row reads actual keybindings, displays each action's first configured binding and uses macOS notation (`⌃L`, `⇧↵`, `⌥…`) on macOS, or `Ctrl+L` / `Shift+Enter` notation on other platforms. Control is never replaced with Command. The row omits whole actions as space becomes tight, retaining the final Menu/Cancel action; Help lists all configured editor bindings. `/settings` opens the workbench's limited settings; use `/workbench off` for Pi's complete native settings dialog.
+Dialogs own keyboard focus and replace the help row above the status strip. Canceling preserves the editor draft and native conversation ScrollView. Native history, multiline editing, external editing (Ctrl+G by default), image paste and transcript rendering remain Pi's responsibilities. The help row uses plain text without individual key backgrounds. It reads actual keybindings, displays each action's first configured binding and separates modifiers from keys with spaces: macOS notation (`⌃ L`, `⇧ ↵`, `⌥ ←`) on macOS, or `Ctrl + L` / `Shift + Enter` notation on other platforms. Control is never replaced with Command. The row omits whole actions as space becomes tight, retaining the final Menu/Cancel action; Help lists all configured editor bindings. `/settings` opens the workbench's limited settings; use `/workbench off` for Pi's complete native settings dialog.
 
 ## Status strip
 
