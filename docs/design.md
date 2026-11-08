@@ -30,6 +30,8 @@ Only shell-owned regions are monochrome. Native progress indicators, third-party
 
 Resume groups SessionManager results by their recorded cwd and passes the chosen path to Pi. It is session switching, not an OS directory browser or a process chdir. The editor draft and reading position remain intact when canceling a dialog; a successful session change intentionally loads the selected conversation.
 
+Resume also has in-overlay rename and delete states using the configured `app.session.rename` / `app.session.delete` bindings. Async operations lock input until completion and retain errors for retry/cancel. Rename appends native session_info metadata through SessionManager, except the current session uses Pi's setSessionName to keep the live manager synchronized. `src/sessions.ts` checks selected paths are regular files, then either appends metadata or unlinks after explicit UI confirmation. Delete is permanent, with no archive/trash, and refuses the currently active session as native Pi does. Search, workspace and draft remain intact while rows/workspaces are updated in memory; deleting the last row leaves an empty, cancelable selector.
+
 ## Reference images
 
 - [Final approved frame and dialog direction](previews/approved-layout.png). Final user correction overrides the image's gray application title: implementation uses solid white.

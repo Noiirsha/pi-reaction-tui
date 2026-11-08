@@ -1,4 +1,4 @@
-import { basename } from "node:path";
+import { basename, resolve } from "node:path";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai/compat";
 import { SessionManager, VERSION, type ExtensionAPI, type ExtensionContext, type ExtensionCommandContext,
   type KeybindingsManager } from "@earendil-works/pi-coding-agent";
@@ -8,6 +8,7 @@ import { ListDialog, ResumeDialog, type Item } from "./src/dialogs.ts";
 import { formatKey, keyText, navigation } from "./src/keys.ts";
 import { statistics, statusText } from "./src/status.ts";
 import { OutputMeter, speedText, ttftText } from "./src/performance.ts";
+import { deleteSavedSession, renameSavedSession } from "./src/sessions.ts";
 import { installLayout } from "./src/host-layout.ts";
 import { center, clean, edge, fit, hint, inverse, muted, row, shell } from "./src/style.ts";
 
@@ -215,9 +216,25 @@ export default function reactionTui(pi: ExtensionAPI) {
       if (!ctx.isIdle()) return ctx.ui.notify("Wait for the current run to finish before switching sessions.", "info");
       const sessions = await SessionManager.listAll();
       if (!sessions.length) return ctx.ui.notify("No saved sessions found.", "info");
-      dialogHints = keys ? `${keyText(keys, "tui.input.tab")} Switch Pane  ${navigation(keys)}` : "";
+      const isCurrent = (path: string) => {
+        const current = ctx.sessionManager.getSessionFile?.();
+        return !!current && resolve(path) === resolve(current);
+      };
       const path = await ctx.ui.custom<string | undefined>((hostTui, _theme, bindings, done) =>
-        new ResumeDialog(hostTui, bindings, sessions, ctx.cwd, done, modalHeight), {
+        new ResumeDialog(hostTui, bindings, sessions, ctx.cwd, done, modalHeight, {
+          isCurrent,
+          hintsChanged: hints => { dialogHints = hints; redraw(); },
+          rename: async (session, name) => {
+            if (!ctx.isIdle()) throw new Error("Wait for the current run to finish.");
+            if (isCurrent(session.path)) pi.setSessionName(name);
+            else await renameSavedSession(session.path, name);
+          },
+          remove: async session => {
+            if (!ctx.isIdle()) throw new Error("Wait for the current run to finish.");
+            if (isCurrent(session.path)) throw new Error("Switch sessions before deleting the current session.");
+            await deleteSavedSession(session.path);
+          },
+        }), {
           overlay: true, overlayOptions: modalOptions,
         });
       dialogHints = undefined;
@@ -281,6 +298,10 @@ export default function reactionTui(pi: ExtensionAPI) {
         { value: "completion", label: "Command Completion", description: "Type /, select, Enter to accept; Enter again to run" },
         { value: "menu", label: "Menu", description: "/workbench; click the top menu in fullscreen mode" },
         { value: "resume", label: "Resume", description: "/resume; Tab switches workspace and session panes" },
+        ...["app.session.rename", "app.session.delete"].filter(action => keys?.getKeys(action).length).map(action => ({
+          value: action, label: action.endsWith("rename") ? "Rename Selected Session" : "Delete Selected Session",
+          description: keys!.getKeys(action).map(binding => formatKey(binding)).join(" / ") + " (Resume list)",
+        })),
         { value: "native", label: "Native Features", description: "History, image paste, external editor and Markdown stay native" },
         { value: "settings", label: "Settings", description: "/settings opens Workbench settings; /workbench off restores Pi UI" },
         ...EDITOR_ACTIONS.filter(([action]) => keys?.getKeys(action).length).map(([action, label]) => ({

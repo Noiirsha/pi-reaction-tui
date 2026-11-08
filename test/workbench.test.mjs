@@ -4,6 +4,8 @@ import { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
+import { mkdtemp, readFile, readdir, rm, unlink } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 
 const modules = process.env.PI_NODE_MODULES || resolve(homedir(), '.pi/agent/install/releases/1.5.0/node_modules');
 const available = existsSync(resolve(modules, '@earendil-works/pi-coding-agent/dist/index.js'));
@@ -26,7 +28,10 @@ export async function host(t, { regular = false } = {}) {
       opened.push(value);
     },
     getActiveTools: () => ['read'], getAllTools: () => [{ name: 'read', description: 'Read files' }],
-    setSessionName: name => { ctx.sessionManager.getSessionName = () => name; },
+    setSessionName: name => {
+      if (ctx.sessionManager.appendSessionInfo) ctx.sessionManager.appendSessionInfo(name);
+      else ctx.sessionManager.getSessionName = () => name;
+    },
     setModel: async model => { ctx.model = model; return true; },
   });
   const terminal = { columns: 110, rows: 36, kittyProtocolActive: false,
@@ -120,6 +125,109 @@ test('native transcript stays mounted; menu and one-row white title live outside
   await h.command('off'); assert.equal(h.tui.layoutRoot, h.originalRoot);
   assert.equal(h.document.children[0], h.header);
   await h.command('on'); assert.equal(h.document.children[0], h.messages);
+});
+
+async function savedSessions(t, h) {
+  const directory = await mkdtemp(resolve(tmpdir(), 'pirt-session-actions-'));
+  const managers = ['Alpha', 'Beta'].map(name => {
+    const manager = h.sdk.SessionManager.create('/work/a', directory);
+    manager.appendMessage({ role: 'user', content: 'shared task', timestamp: Date.now() });
+    manager.appendSessionInfo(name);
+    return manager;
+  });
+  const original = h.sdk.SessionManager.listAll;
+  h.sdk.SessionManager.listAll = async () => (await h.sdk.SessionManager.list('/work/a', directory))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  h.ctx.cwd = '/work/a'; h.editor().setText('retained draft');
+  t.after(async () => { h.sdk.SessionManager.listAll = original; await rm(directory, { recursive: true, force: true }); });
+  return { directory, managers, paths: managers.map(manager => manager.getSessionFile()) };
+}
+
+async function until(predicate) {
+  const deadline = Date.now() + 2000;
+  while (!predicate()) {
+    if (Date.now() > deadline) throw new Error('Timed out waiting for session action');
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+}
+
+test('resume renames the selected saved session without switching or losing search/draft', { skip: !available }, async t => {
+  const h = await host(t), f = await savedSessions(t, h);
+  const before = await readFile(f.paths[0], 'utf8');
+  let switches = 0; h.ctx.switchSession = async () => { switches++; };
+  const command = h.command('resume'); await until(() => !!h.dialog());
+  const dialog = h.dialog(); dialog.handleInput('shared');
+  assert.match(h.footer().render(160)[0], /Rename.*Delete/);
+  dialog.handleInput('\x12'); assert.ok(dialog.render(80).some(line => line.includes('Rename Session')));
+  dialog.handleInput('\x1b'); assert.equal(await readFile(f.paths[0], 'utf8'), before);
+  dialog.handleInput('\x12'); dialog.handleInput('\x01'); dialog.handleInput('\x0b'); dialog.handleInput('\r');
+  assert.ok(dialog.render(80).some(line => line.includes('Name cannot be empty')));
+  dialog.handleInput('New Alpha'); dialog.handleInput('\r'); dialog.handleInput('\r');
+  await until(() => dialog.render(80).some(line => line.includes('Resume Session')));
+  const after = await readFile(f.paths[0], 'utf8');
+  assert.ok(after.startsWith(before), 'rename appends native session metadata without rewriting messages');
+  assert.equal(h.sdk.SessionManager.open(f.paths[0]).getSessionName(), 'New Alpha');
+  assert.ok(dialog.render(100).some(line => line.includes('shared')));
+  assert.ok(dialog.render(100).some(line => line.includes('New Alpha')));
+  dialog.handleInput('\x1b'); await command;
+  assert.equal(switches, 0); assert.equal(h.editor().getText(), 'retained draft');
+});
+
+test('resume confirms permanent deletion, cancels without mutation and handles the last remaining session', { skip: !available }, async t => {
+  const h = await host(t), f = await savedSessions(t, h);
+  const command = h.command('resume'); await until(() => !!h.dialog());
+  const dialog = h.dialog(); dialog.handleInput('shared'); dialog.handleInput('\x04');
+  for (const width of [36, 48, 72, 100]) {
+    const lines = dialog.render(width);
+    assert.equal(lines.length, 8);
+    assert.ok(lines.every(line => h.lib.visibleWidth(line) <= width));
+    assert.match(h.lib.stripTerminalSequences(lines[1]), /Delete Session/);
+  }
+  assert.ok(h.footer().render(160)[0].includes('Delete'));
+  dialog.handleInput('\x1b'); assert.ok(existsSync(f.paths[0]));
+  dialog.handleInput('\x04'); dialog.handleInput('\r'); dialog.handleInput('\r');
+  await until(() => dialog.render(80).some(line => line.includes('Resume Session')));
+  assert.equal(existsSync(f.paths[0]), false); assert.ok(existsSync(f.paths[1]));
+  assert.deepEqual(await readdir(f.directory), [f.paths[1].split('/').at(-1)], 'no archive or trash is created');
+  assert.ok(dialog.render(100).some(line => line.includes('Beta')));
+  assert.ok(dialog.render(100).some(line => line.includes('shared')));
+  dialog.handleInput('\x04'); dialog.handleInput('\r');
+  await until(() => dialog.render(80).some(line => line.includes('No matches')));
+  assert.deepEqual(await readdir(f.directory), []);
+  assert.ok(!h.footer().render(160)[0].includes('Delete'));
+  dialog.handleInput('\x1b'); await command;
+  assert.equal(h.editor().getText(), 'retained draft');
+});
+
+test('resume renames the active session through Pi and refuses to delete its live file', { skip: !available }, async t => {
+  const h = await host(t), f = await savedSessions(t, h);
+  h.ctx.sessionManager = f.managers[0];
+  const command = h.command('resume'); await until(() => !!h.dialog());
+  const dialog = h.dialog();
+  assert.ok(!h.footer().render(160)[0].includes('Delete'));
+  dialog.handleInput('\x04');
+  assert.ok(dialog.render(100).some(line => line.includes('Switch sessions before deleting')));
+  assert.ok(existsSync(f.paths[0]));
+  dialog.handleInput('\x12'); dialog.handleInput('\x01'); dialog.handleInput('\x0b'); dialog.handleInput('Active renamed'); dialog.handleInput('\r');
+  await until(() => dialog.render(80).some(line => line.includes('Resume Session')));
+  assert.equal(f.managers[0].getSessionName(), 'Active renamed');
+  assert.equal(h.sdk.SessionManager.open(f.paths[0]).getSessionName(), 'Active renamed');
+  assert.ok(h.lines()[1].includes('Active renamed'));
+  dialog.handleInput('\x1b'); await command;
+});
+
+test('resume reports disk failures without closing the list or silently dropping the entry', { skip: !available }, async t => {
+  const h = await host(t), f = await savedSessions(t, h);
+  const command = h.command('resume'); await until(() => !!h.dialog());
+  const dialog = h.dialog(); await unlink(f.paths[0]);
+  dialog.handleInput('\x12'); dialog.handleInput('\r');
+  await until(() => dialog.render(160).some(line => line.includes('ENOENT')));
+  dialog.handleInput('\x1b');
+  dialog.handleInput('\x04'); dialog.handleInput('\r');
+  await until(() => dialog.render(160).some(line => line.includes('ENOENT')));
+  assert.ok(existsSync(f.paths[1]));
+  dialog.handleInput('\x1b'); assert.ok(dialog.render(100).some(line => line.includes('Alpha')));
+  dialog.handleInput('\x1b'); await command;
 });
 
 test('provider and streaming events drive performance in the native footer and clear on session start', { skip: !available }, async t => {

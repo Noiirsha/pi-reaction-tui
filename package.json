@@ -1,6 +1,6 @@
 {
   "name": "pi-reaction-tui",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "type": "module",
   "description": "A monochrome DOS-style workbench around Pi's native transcript and editor.",
