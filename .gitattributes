@@ -1,0 +1,8 @@
+* text=auto eol=lf
+*.ts text diff
+*.mjs text diff
+*.json text
+*.md text diff
+*.png binary
+*.jpg binary
+*.webp binary

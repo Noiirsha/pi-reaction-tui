@@ -1,0 +1,16 @@
+{
+  "name": "pi-reaction-tui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A monochrome DOS-style workbench around Pi's native transcript and editor.",
+  "keywords": ["pi-package"],
+  "engines": { "node": ">=22.19.0" },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "1.5.0",
+    "@earendil-works/pi-ai": "1.5.0",
+    "@earendil-works/pi-tui": "1.5.0"
+  },
+  "pi": { "extensions": ["./index.ts"] },
+  "scripts": { "test": "node --test test/*.test.mjs" }
+}
