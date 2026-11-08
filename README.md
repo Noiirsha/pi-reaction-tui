@@ -60,9 +60,21 @@ The screen's final row is always a full-width, one-row white strip with black te
 | CR / CW | Session totals for cache-read / cache-write tokens. |
 | HIT | Latest assistant request's cache-read tokens divided by input + cache read + cache write. |
 | COST | Sum of recorded session usage costs in USD; rounded to three decimals in the strip. |
+| TTFT | Time from the foreground provider-request hook until the first nonempty counted output delta. |
+| OUT | Latest request's output tokens per second; `~` marks estimated token counts. |
 | CTX | Current context percentage / context-window capacity. |
 
-Session totals include recorded auxiliary usage, such as compaction, across saved session entries. Unknown values display `-`; a new session does not claim a zero-percent cache hit. Numbers use compact k/M/B units. Narrow terminals first shorten CTX capacity, then omit COST, CW and CR before the primary token counts and current context. Fields are omitted whole and never wrap; `/workbench details` retains exact counts and cost. Totals are cached between completed message/turn, session and compaction events so resizing and ordinary keypresses do not rescan history.
+Session totals include recorded auxiliary usage, such as compaction, across saved session entries. Unknown values display `-`; a new session does not claim a zero-percent cache hit. Numbers use compact k/M/B units. Narrow terminals first shorten CTX capacity, then omit COST, CW and CR before primary counters, request performance and current context. Fields are omitted whole and never wrap; `/workbench details` retains exact counts, cost and performance details. Totals are cached between completed message/turn, session and compaction events so resizing and ordinary keypresses do not rescan history.
+
+### Output performance
+
+Each foreground provider request starts fresh timings using a monotonic clock. TTFT includes request setup, network/server wait and hidden reasoning before the first counted delta. It is time to the first client-visible output chunk, not a server-side token timestamp. Empty start events and tool-call arguments do not stop that clock. Output speed is the counted output divided by the interval from first to last counted delta, excluding the wait before output, the usage/network tail afterward and subsequent tool execution. Final results remain until the next request; session start/reload/branch navigation clears them. Older saved sessions have no restored timing measurements.
+
+OpenAI Responses-family reasoning summaries and redacted thinking are excluded: TTFT waits for text, and OUT counts text only. Other APIs' actual streamed thinking counts together with text. This follows the provider stream, irrespective of whether you collapse Pi's thinking display. Hidden reasoning with no stream therefore never becomes visible output.
+
+While streaming, token counts use the same rough character/4 heuristic as Pi's `estimateTokens`, applied only to counted text/thinking deltas; OUT shows `~`. This is not a model-specific tokenizer and can be inaccurate, especially for non-English text. Completion replaces that estimate with provider usage only when the selected output can be separated: output minus reported reasoning for text-only responses, or total output for fully streamed thinking plus text. Tool calls, missing reasoning breakdowns, mixed redacted/visible thinking and aborted/error responses retain estimates. Provider-reported zero reasoning is trusted; missing or inaccurate upstream breakdowns cannot be repaired by the UI. UP/DN billing counters keep their original session totals.
+
+A response with no counted output displays `-` for both measurements. A single buffered chunk can have TTFT but no measurable streaming speed; intervals shorter than 100 ms also show `-` rather than an extreme rate. Performance refreshes on stream events; there is no background polling timer or tokenization dependency. All configured calls are measured locally without sending extra model requests.
 
 ## Scope and compatibility
 
@@ -80,7 +92,7 @@ npm test
 PI_NODE_MODULES=/path/to/pi/node_modules npm test
 ```
 
-Integration tests use the actual Pi 1.5.0 loader, Markdown renderer, native editor, keybindings and fullscreen layout. They cover frame widths, restoring the original layout, completion acceptance, command dispatch, external editor/paste callbacks, model-dialog search/cancel, draft retention, regular-screen fallback, resume workspace/search/selection, the independent status strip, usage refresh and right-aligned mode at different widths. Pure tests cover usage/cache arithmetic and platform key notation. A missing Pi runtime causes integration tests to skip; pure tests still run.
+Integration tests use the actual Pi 1.5.0 loader, Markdown renderer, native editor, keybindings and fullscreen layout. They cover frame widths, restoring the original layout, completion acceptance, command dispatch, external editor/paste callbacks, model-dialog search/cancel, draft retention, regular-screen fallback, resume workspace/search/selection, the independent status strip, usage refresh, performance event wiring and right-aligned mode at different widths. Pure tests cover usage/cache arithmetic, platform key notation, hidden/streamed thinking, final counter correction, tool arguments, retries, aborts, redaction, buffered responses and a deterministic monotonic clock. A missing Pi runtime causes integration tests to skip; pure tests still run.
 
 An isolated offline 80×24 Pi process was also used to verify startup, framing, a real model dialog opened by Ctrl+L, dialog dismissal and clean exit. No model requests were sent. OS clipboard image data, launching a real external editor, authenticated model execution and switching a personal saved session have not been exercised end to end; automated tests verify the native callbacks and selected session path.
 

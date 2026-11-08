@@ -7,6 +7,7 @@ import { WorkbenchEditor } from "./src/editor.ts";
 import { ListDialog, ResumeDialog, type Item } from "./src/dialogs.ts";
 import { formatKey, keyText, navigation } from "./src/keys.ts";
 import { statistics, statusText } from "./src/status.ts";
+import { OutputMeter, speedText, ttftText } from "./src/performance.ts";
 import { installLayout } from "./src/host-layout.ts";
 import { center, clean, edge, fit, hint, inverse, muted, row, shell } from "./src/style.ts";
 
@@ -34,6 +35,7 @@ export default function reactionTui(pi: ExtensionAPI) {
   let footerHeight = 2;
   let stats = statistics([]);
   let statsDirty = true;
+  const meter = new OutputMeter();
   const modalHeight = () => Math.max(8, (tui?.terminal.rows ?? 24) -
     (editor?.render(tui?.terminal.columns ?? 80).length ?? 3) - footerHeight - 4);
   const modalOptions = () => ({ width: "90%" as const, row: 3, maxHeight: modalHeight() });
@@ -136,7 +138,8 @@ export default function reactionTui(pi: ExtensionAPI) {
           lines.push(shell(fit(line, width)));
           // The EDIT-style status strip is always the last, full-width, unframed row.
           lines.push(inverse(statusText(width, run, stats,
-            usage ? { ...usage, contextWindow: usage.contextWindow ?? context.model?.contextWindow } : undefined, query.mode)));
+            usage ? { ...usage, contextWindow: usage.contextWindow ?? context.model?.contextWindow } : undefined,
+            query.mode, meter.snapshot())));
           footerHeight = lines.length;
           return lines;
         },
@@ -255,6 +258,7 @@ export default function reactionTui(pi: ExtensionAPI) {
       const usage = ctx.getContextUsage();
       const entries = ctx.sessionManager.getEntries();
       const totals = statistics(entries);
+      const output = meter.snapshot();
       await choose(ctx, "Session Details", [
         { value: "cwd", label: "Workspace", description: ctx.cwd },
         { value: "session", label: "Session", description: ctx.sessionManager.getSessionName() || "Untitled" },
@@ -264,6 +268,10 @@ export default function reactionTui(pi: ExtensionAPI) {
         { value: "cache", label: "Cache Read / Write", description: `${totals.cacheRead} / ${totals.cacheWrite}` },
         { value: "hit", label: "Latest Prompt Cache Hit", description: totals.hit == null ? "Unavailable" : `${totals.hit.toFixed(1)}%` },
         { value: "cost", label: "Recorded Cost", description: `$${totals.cost.toFixed(4)}` },
+        { value: "ttft", label: "Latest Request TTFT", description: ttftText(output.ttftMs) },
+        { value: "speed", label: "Latest Output Speed", description: speedText(output) },
+        { value: "scope", label: "Speed Counting Scope", description: output.scope === "text+thinking" ? "Text + streamed thinking" : "Text only" },
+        { value: "estimate", label: "Speed Token Source", description: output.estimated ? "Estimated (Pi char/4 heuristic)" : "Provider-reported usage" },
         { value: "entries", label: "Session Entries", description: String(entries.length) },
         { value: "host", label: "Pi Version", description: VERSION },
       ]);
@@ -296,18 +304,23 @@ export default function reactionTui(pi: ExtensionAPI) {
       finally { busy = false; activeTab = ""; dialogHints = undefined; redraw(); }
     },
   });
-  pi.on("session_start", (_event, ctx) => install(ctx));
+  pi.on("session_start", (_event, ctx) => { meter.reset(); install(ctx); });
   pi.on("session_info_changed", (_event, ctx) => { context = ctx; redraw(); });
-  pi.on("agent_start", (_event, ctx) => { context = ctx; working = "RUNNING"; redraw(); });
+  pi.on("agent_start", (_event, ctx) => { context = ctx; meter.reset(); working = "RUNNING"; redraw(); });
+  pi.on("before_provider_request", (_event, ctx) => { context = ctx; meter.begin(); redraw(); });
   pi.on("tool_execution_start", (_event, ctx) => { context = ctx; working = "TOOL"; redraw(); });
   pi.on("tool_execution_end", () => { working = "RUNNING"; redraw(); });
-  pi.on("agent_settled", (_event, ctx) => { context = ctx; statsDirty = true; working = "IDLE"; redraw(); });
-  pi.on("message_end", (_event, ctx) => { context = ctx; statsDirty = true; redraw(); });
+  pi.on("agent_settled", (_event, ctx) => { context = ctx; meter.stop(); statsDirty = true; working = "IDLE"; redraw(); });
+  pi.on("message_end", (event, ctx) => {
+    context = ctx;
+    if (event.message?.role === "assistant") meter.finish(event.message);
+    statsDirty = true; redraw();
+  });
   pi.on("turn_end", (_event, ctx) => { context = ctx; statsDirty = true; redraw(); });
   pi.on("session_compact", (_event, ctx) => { context = ctx; statsDirty = true; redraw(); });
-  pi.on("session_tree", (_event, ctx) => { context = ctx; statsDirty = true; redraw(); });
-  pi.on("message_update", (_event, ctx) => { context = ctx; redraw(); });
+  pi.on("session_tree", (_event, ctx) => { context = ctx; meter.reset(); statsDirty = true; redraw(); });
+  pi.on("message_update", (event, ctx) => { context = ctx; meter.update(event.assistantMessageEvent); redraw(); });
   pi.on("model_select", (_event, ctx) => { context = ctx; redraw(); });
   pi.on("thinking_level_select", (_event, ctx) => { context = ctx; redraw(); });
-  pi.on("session_shutdown", (_event, ctx) => disable(ctx));
+  pi.on("session_shutdown", (_event, ctx) => { meter.stop(); disable(ctx); });
 }

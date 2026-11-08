@@ -20,6 +20,8 @@ Normal conversation uses one full-width reading area. Only the temporary Resume 
 
 Shortcut hints are plain text on the shell background, without inverse key blocks. Spaces separate modifier symbols and the following key (`⌃ L`, `⇧ ↵`), including in dialog and completion hints, to avoid glyphs touching.
 
+`src/performance.ts` keeps a per-request monotonic clock and visible-output counters. The foreground `before_provider_request` hook starts it; `message_update` text/thinking deltas set TTFT and the streaming interval; `message_end` optionally corrects the token numerator using final usage. Responses summaries/redacted thinking and tool arguments never count as visible thinking/text. Estimates reuse Pi's char/4 rule, labeled `~`. A single chunk or an interval under 100 ms has no speed. Only clocks and counters are retained; no extra request, polling timer, transcript buffer or tokenizer dependency is introduced. Latest measurements appear as TTFT/OUT in the white strip and in Details, and clear across new requests and session changes.
+
 ## Boundaries
 
 The version gate runs before any customization. The host adapter validates expected structures before mutation and falls back to public header/editor/footer hooks when fullscreen framing is unavailable. Structural changes in Pi require retesting this adapter, even if public SDK signatures stay stable.

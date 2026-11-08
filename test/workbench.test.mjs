@@ -88,7 +88,7 @@ export async function host(t, { regular = false } = {}) {
   const loaded = await loadExtensions([resolve(root, 'index.ts')], root, bus, runtime);
   assert.deepEqual(loaded.errors, []);
   const extension = loaded.extensions[0];
-  const emit = async name => { for (const f of extension.handlers.get(name) ?? []) await f({}, ctx); };
+  const emit = async (name, event = {}) => { for (const f of extension.handlers.get(name) ?? []) await f(event, ctx); };
   await emit('session_start');
   t.after(async () => { finish?.(undefined); await emit('session_shutdown'); runtime.invalidate(); tui.stop(); });
   return { ctx, tui, terminal, bindings, originalRoot, header, document, transcript, messages, notices, opened, submitted,
@@ -120,6 +120,24 @@ test('native transcript stays mounted; menu and one-row white title live outside
   await h.command('off'); assert.equal(h.tui.layoutRoot, h.originalRoot);
   assert.equal(h.document.children[0], h.header);
   await h.command('on'); assert.equal(h.document.children[0], h.messages);
+});
+
+test('provider and streaming events drive performance in the native footer and clear on session start', { skip: !available }, async t => {
+  const h = await host(t);
+  await h.emit('agent_start'); await h.emit('before_provider_request', { payload: {} });
+  const message = { role: 'assistant', api: 'openai-responses', content: [{ type: 'text', text: 'abcd' }],
+    usage: { output: 200, reasoning: 180 }, stopReason: 'stop' };
+  const delta = text => h.emit('message_update', { message, assistantMessageEvent: {
+    type: 'text_delta', delta: text, contentIndex: 0, partial: message,
+  } });
+  await delta('abcd'); await new Promise(resolve => setTimeout(resolve, 110)); await delta('efgh');
+  assert.match(h.footer().render(160).at(-1), /TTFT \d+ms.*OUT ~/);
+  await h.emit('message_end', { message }); await h.emit('agent_settled');
+  assert.match(h.footer().render(160).at(-1), /TTFT \d+ms.*OUT \d+\.\dt\/s/);
+  await h.emit('before_provider_request', { payload: {} });
+  assert.match(h.footer().render(160).at(-1), /TTFT -.*OUT -/);
+  await h.emit('session_start');
+  assert.match(h.footer().render(160).at(-1), /TTFT -.*OUT -/);
 });
 
 test('completion accepts before submitting; native editing actions and keybindings survive', { skip: !available }, async t => {
